@@ -69,3 +69,91 @@ Exercise repository to understand how to use gateway-api feature in Kubernetes
 - Cleaner separation of concerns.
 
 - Works across vendors (NGINX, Istio, Cilium, GKE, etc.).
+
+
+### Comparison
+
+We’ll use a simple case:
+👉 Route all traffic from http://example.com/web → web-service:80.
+
+#### Using Ingress
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+  - host: example.com
+    http:
+      paths:
+      - path: /web
+        pathType: Prefix
+        backend:
+          service:
+            name: web-service
+            port:
+              number: 80
+```
+
+🔎 Notes:
+
+- Uses IngressClass (via annotation or spec.ingressClassName).
+
+- Limited to HTTP/HTTPS.
+
+- Extra features (like mTLS, path rewrites) often require controller-specific annotations, which reduce portability.
+
+#### Using Gateway API
+
+This requires 3 resources: GatewayClass, Gateway, and HTTPRoute.
+
+1. GatewayClass
+
+Defines the controller you’re using (similar to IngressClass).
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: nginx
+spec:
+  controllerName: k8s-gateway.nginx.org/gateway-controller
+```
+2. Gateway
+
+Creates the actual load balancer / entry point.
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: my-gateway
+spec:
+  gatewayClassName: nginx
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    hostname: example.com
+```
+3. HTTPRoute
+
+Defines the routing rules.
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: web-route
+spec:
+  parentRefs:
+  - name: my-gateway
+  rules:
+  - matches:
+    - path:
+        type: PathPrefix
+        value: /web
+    backendRefs:
+    - name: web-service
+      port: 80
+```
